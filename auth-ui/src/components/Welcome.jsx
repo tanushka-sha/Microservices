@@ -1,4 +1,4 @@
-export default function Welcome({ userName = 'Ethan', toolName = 'AI Studio', tagline = "We couldn't create this, this, this in this AI tool.", onClickPrompt, onClickImage, onClickDashboard }) {
+export default function Welcome({ userName = 'Ethan', toolName = 'AI Studio', tagline = "Your ideas, answered and illustrated..", onClickPrompt, onClickImage, onClickDashboard }) {
   return (
     <div className="min-h-screen w-full bg-gradient-to-b from-indigo-200/60 via-indigo-50 to-purple-100 flex items-center justify-center p-4">
       <div className="mx-auto w-full max-w-3xl text-center space-y-6">

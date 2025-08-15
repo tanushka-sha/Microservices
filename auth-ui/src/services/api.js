@@ -3,18 +3,20 @@ const API_BASE_URL = 'http://localhost:8000'
 // Helper function to make API requests
 const apiRequest = async (endpoint, options = {}) => {
   const url = `${API_BASE_URL}${endpoint}`
-  
-  const defaultOptions = {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
+
+  // Merge headers safely so Content-Type is not lost when spreading options
+  const mergedHeaders = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    ...(options.headers || {}),
   }
 
-  const response = await fetch(url, {
-    ...defaultOptions,
+  const fetchOptions = {
     ...options,
-  })
+    headers: mergedHeaders,
+  }
+
+  const response = await fetch(url, fetchOptions)
 
   const data = await response.json()
 
@@ -105,6 +107,20 @@ export const authAPI = {
       headers: {
         'Authorization': `Bearer ${token}`,
       },
+    })
+  },
+}
+
+// Search API functions
+export const searchAPI = {
+  // Perform web search (Tavily via backend)
+  search: async (query, token) => {
+    return apiRequest('/search/', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ query }),
     })
   },
 }

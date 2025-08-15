@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import ToggleButton from './ToggleButton'
+import { searchAPI, tokenManager } from '../services/api'
 
 const IconButton = ({ children, label, active, onClick, darkMode = false }) => (
   <button
@@ -49,8 +50,19 @@ export default function PromptPage({ onSubmit, userName, onLogout, onNavigateToD
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const [isDark, setIsDark] = useState(false)
   const profileWrapRef = useRef(null)
+  const [isSearching, setIsSearching] = useState(false)
+  const [error, setError] = useState('')
+  const [results, setResults] = useState([])
 
+
+  const resultsEndRef = useRef(null);
+
+  // useEffect(() => {
+  //   resultsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  // }, [results]);
   
+
+
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -61,6 +73,28 @@ export default function PromptPage({ onSubmit, userName, onLogout, onNavigateToD
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  const handleSend = async (e) => {
+    e.preventDefault()
+    if (!prompt.trim()) return
+
+    setIsSearching(true)
+    setError('')
+    try {
+      const token = tokenManager.getToken()
+      if (!token) throw new Error('Please log in first')
+
+      const data = await searchAPI.search(prompt, token)
+      console.log('Search response:', data)
+      setResults(data?.results || [])
+      onSubmit?.(prompt)
+    } catch (err) {
+      console.error('Search error:', err)
+      setError(err?.message || 'Search failed')
+    } finally {
+      setIsSearching(false)
+    }
+  }
 
   return (
     <div className={`h-screen overflow-hidden w-full flex ${isDark ? 'bg-black text-white' : 'bg-white text-slate-900'}`}>
@@ -92,18 +126,19 @@ export default function PromptPage({ onSubmit, userName, onLogout, onNavigateToD
       </aside>
 
       {/* Main content */}
-      <main className="relative flex-1 p-4 sm:p-6">
+      <main className={`relative flex-1 flex flex-col h-screen p-4 sm:p-6 ${isDark ? 'bg-black text-white' : 'bg-white text-slate-900'}`}>
+
         <div className="absolute right-4 top-4 flex items-center gap-2">
           <ToggleButton isOn={isDark} onToggle={setIsDark} />
-          {/* <button className="rounded-lg bg-indigo-600 px-4 py-2 text-white text-sm font-medium shadow hover:bg-indigo-700">Export</button> */}
         </div>
-        <div className="h-full w-full flex items-center justify-center">
-          <div className="w-full max-w-3xl text-center space-y-6">
+        <div className="h-full w-full flex  overflow-y-scroll">
+          <div className="w-full  text-center space-y-6">
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-semibold">
               Where should we begin{userName ? `, ${userName}` : ''}?
             </h1>
-            <form onSubmit={(e) => { e.preventDefault(); onSubmit?.(prompt) }} className="flex justify-center">
-              <div className="relative w-full max-w-xl">
+            <form onSubmit={handleSend} className="w-full max-w-xl mx-auto sticky top-4 z-10 bg-transparent">
+    <div className="relative">
+              {/* <div className="relative w-full max-w-xl"> */}
                 <input
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
@@ -113,7 +148,7 @@ export default function PromptPage({ onSubmit, userName, onLogout, onNavigateToD
                 <button
                   type="submit"
                   className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md bg-indigo-600 p-2 text-white shadow hover:bg-indigo-700 disabled:opacity-60"
-                  disabled={!prompt.trim()}
+                  disabled={!prompt.trim() || isSearching}
                   aria-label="Submit prompt"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" className="h-5 w-5">
@@ -122,6 +157,48 @@ export default function PromptPage({ onSubmit, userName, onLogout, onNavigateToD
                 </button>
               </div>
             </form>
+
+
+ 
+{/* <div className="flex-1 overflow-y-auto mt-4 space-y-2">
+  {results.map((r, idx) => (
+    <div key={idx} className="flex flex-col w-full">
+      
+      <div className="text-right text-slate-900 dark:text-white">
+        {r.prompt} 
+      </div>
+
+      
+      <div className={`text-left mt-1 ${isDark ? 'text-slate-300' : 'text-slate-900'}`}>
+        {r.summary || r.response}
+      </div>
+    </div>
+  ))}
+  <div ref={resultsEndRef} />
+</div> */}
+
+
+
+            {error && (
+              <div className={`text-sm ${isDark ? 'text-red-300' : 'text-red-600'}`}>{error}</div>
+            )}
+
+            {results?.length > 0 && (
+              <div className="text-left space-y-2 w-full mx-auto">
+                {results.map((r, idx) => (
+                  <div key={idx} className={`rounded-lg p-3 ${isDark ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-slate-200'} shadow-sm`}>
+                    <div className="font-semibold mb-1">{r.title || 'Result'}</div>
+                    {r.url && (
+                      <a className="text-indigo-600 text-sm" href={r.url} target="_blank" rel="noreferrer">{r.url}</a>
+                    )}
+                    {r.summary && (
+                      <p className={`mt-1 text-sm ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{r.summary}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
           </div>
         </div>
       </main>

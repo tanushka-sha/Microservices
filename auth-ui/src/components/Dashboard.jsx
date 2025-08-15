@@ -83,7 +83,7 @@ export default function Dashboard({ userName, onLogout, onBackToWelcome }) {
       id: 1,
       type: 'search',
       prompt: 'What are the best hiking trails near Yosemite?',
-      date: new Date().toISOString(),
+      created_at: new Date().toISOString(),
       result_title: 'Yosemite Hiking Trails',
       result_summary: 'Top hiking trails in Yosemite National Park...'
     },
@@ -91,7 +91,7 @@ export default function Dashboard({ userName, onLogout, onBackToWelcome }) {
       id: 2,
       type: 'image',
       prompt: 'Generate an image of a serene mountain landscape at sunset.',
-      date: new Date().toISOString(),
+      created_at: new Date().toISOString(),
       result_title: 'Mountain Landscape',
       result_summary: 'AI-generated mountain landscape image...'
     },
@@ -99,7 +99,7 @@ export default function Dashboard({ userName, onLogout, onBackToWelcome }) {
       id: 3,
       type: 'search',
       prompt: 'Top-rated Italian restaurants in downtown San Francisco',
-      date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // Yesterday
+      created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // Yesterday
       result_title: 'Italian Restaurants SF',
       result_summary: 'Best Italian restaurants in San Francisco...'
     },
@@ -107,7 +107,7 @@ export default function Dashboard({ userName, onLogout, onBackToWelcome }) {
       id: 4,
       type: 'image',
       prompt: 'Create a digital painting of a futuristic cityscape at night.',
-      date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
       result_title: 'Futuristic Cityscape',
       result_summary: 'Digital painting of a futuristic city...'
     },
@@ -115,7 +115,7 @@ export default function Dashboard({ userName, onLogout, onBackToWelcome }) {
       id: 5,
       type: 'search',
       prompt: 'Latest news on renewable energy technologies',
-      date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
       result_title: 'Renewable Energy News',
       result_summary: 'Latest developments in renewable energy...'
     }
@@ -133,17 +133,20 @@ export default function Dashboard({ userName, onLogout, onBackToWelcome }) {
       }
 
       const filters = {}
-      if (selectedDate) filters.date = selectedDate
-      if (selectedType) filters.type = selectedType
-      if (searchQuery) filters.search = searchQuery
+      if (selectedDate) filters.date_from = selectedDate
+      if (selectedType) filters.type_filter = selectedType
+      if (searchQuery) filters.keyword = searchQuery
 
       const response = await dashboardAPI.getHistory(token, filters)
-      setHistory(response.items || response || [])
+      console.log('Dashboard API response:', response)
+      setHistory(Array.isArray(response) ? response : [])
     } catch (error) {
       console.error('Failed to load history from API:', error)
       setApiError(true)
-      // Fallback to mock data
-      setHistory(mockHistory)
+      // Fallback to mock data only if we have no real data
+      if (!history.length) {
+        setHistory(mockHistory)
+      }
     } finally {
       setLoading(false)
     }
@@ -173,10 +176,10 @@ export default function Dashboard({ userName, onLogout, onBackToWelcome }) {
     historyData.forEach(item => {
       // Handle different date formats
       let itemDate
-      if (typeof item.date === 'string') {
-        itemDate = new Date(item.date)
-      } else if (item.date instanceof Date) {
-        itemDate = item.date
+      if (typeof item.created_at === 'string') {
+        itemDate = new Date(item.created_at)
+      } else if (item.created_at instanceof Date) {
+        itemDate = item.created_at
       } else {
         itemDate = new Date()
       }
@@ -213,7 +216,7 @@ export default function Dashboard({ userName, onLogout, onBackToWelcome }) {
   const filteredHistory = history.filter(item => {
     const matchesSearch = item.prompt.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesType = !selectedType || item.type === selectedType.toLowerCase()
-    const matchesDate = !selectedDate || new Date(item.date).toDateString() === new Date(selectedDate).toDateString()
+    const matchesDate = !selectedDate || new Date(item.created_at).toDateString() === new Date(selectedDate).toDateString()
     
     return matchesSearch && matchesType && matchesDate
   })
@@ -247,36 +250,44 @@ export default function Dashboard({ userName, onLogout, onBackToWelcome }) {
     setEditingItem(item)
   }
 
-  const handleEditSave = async (newPrompt) => {
+  const handleEditSave = async (newData) => {
     try {
       const token = tokenManager.getToken()
       if (token && editingItem) {
-        // Update the prompt in local state first
+        // Prepare update data for backend
+        const updateData = {}
+        if (newData.result_title !== undefined) updateData.result_title = newData.result_title
+        if (newData.result_summary !== undefined) updateData.result_summary = newData.result_summary
+        if (newData.prompt !== undefined) updateData.prompt = newData.prompt
+        
+        // Call backend API to update the item
+        const updatedItem = await dashboardAPI.updateHistoryItem(token, editingItem.id, updateData)
+        
+        // Update local state with the response from backend
         setHistory(prev => prev.map(item => 
           item.id === editingItem.id 
-            ? { ...item, prompt: newPrompt }
+            ? { ...item, ...updatedItem }
             : item
         ))
         
-        // For now, we'll just update locally since the backend doesn't support prompt updates
-        // If you need to persist prompt changes, you'll need to add that field to the backend schema
-        console.log('Prompt updated locally. Backend update skipped as prompt field is not supported.')
+        console.log('✅ Item updated successfully in database:', updatedItem)
       } else {
-        // Update local state even if no token
+        // Fallback: update local state even if no token
         setHistory(prev => prev.map(item => 
           item.id === editingItem.id 
-            ? { ...item, prompt: newPrompt }
+            ? { ...item, ...newData }
             : item
         ))
+        console.log('⚠️  Updated locally (no token available)')
       }
       
       setEditingItem(null)
     } catch (error) {
-      console.error('Failed to update item:', error)
+      console.error('❌ Failed to update item:', error)
       // Still update local state even if API fails
       setHistory(prev => prev.map(item => 
         item.id === editingItem.id 
-          ? { ...item, prompt: newPrompt }
+          ? { ...item, ...newData }
           : item
       ))
       setEditingItem(null)
@@ -466,7 +477,7 @@ export default function Dashboard({ userName, onLogout, onBackToWelcome }) {
             </div>
           ) : (
             Object.entries(groupedHistory).map(([date, items]) => (
-              <div key={date} className="bg-white rounded-lg shadow-sm border border-gray-200">
+              <div key={date} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-y-scroll h-96">
                 <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200">
                   <h2 className="text-base sm:text-lg font-semibold text-gray-900">{date}</h2>
                 </div>
@@ -488,8 +499,8 @@ export default function Dashboard({ userName, onLogout, onBackToWelcome }) {
                           </div>
                           <div className="flex-1 min-w-0">
                             {editingItem?.id === item.id ? (
-                              <EditPrompt
-                                prompt={item.prompt}
+                              <EditItemForm
+                                item={item}
                                 onSave={handleEditSave}
                                 onCancel={handleEditCancel}
                               />
@@ -498,8 +509,18 @@ export default function Dashboard({ userName, onLogout, onBackToWelcome }) {
                                 <p className="text-sm font-medium text-gray-900 break-words">
                                   {item.prompt}
                                 </p>
+                                {item.result_title && (
+                                  <p className="text-sm text-gray-700 mt-1">
+                                    <strong>Title:</strong> {item.result_title}
+                                  </p>
+                                )}
+                                {item.result_summary && (
+                                  <p className="text-sm text-gray-600 mt-1">
+                                    <strong>Summary:</strong> {item.result_summary}
+                                  </p>
+                                )}
                                 <p className="text-xs text-gray-500 mt-1">
-                                  {formatTime(item.date)}
+                                  {formatTime(item.created_at)}
                                 </p>
                               </div>
                             )}
@@ -542,9 +563,13 @@ export default function Dashboard({ userName, onLogout, onBackToWelcome }) {
   )
 }
 
-// Edit Prompt Component
-function EditPrompt({ prompt, onSave, onCancel }) {
-  const [value, setValue] = useState(prompt)
+// Edit Item Form Component
+function EditItemForm({ item, onSave, onCancel }) {
+  const [formData, setFormData] = useState({
+    prompt: item.prompt || '',
+    result_title: item.result_title || '',
+    result_summary: item.result_summary || ''
+  })
   const inputRef = useRef(null)
 
   useEffect(() => {
@@ -552,13 +577,13 @@ function EditPrompt({ prompt, onSave, onCancel }) {
   }, [])
 
   const handleSave = () => {
-    if (value.trim()) {
-      onSave(value.trim())
+    if (formData.prompt.trim()) {
+      onSave(formData)
     }
   }
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && e.ctrlKey) {
       handleSave()
     } else if (e.key === 'Escape') {
       onCancel()
@@ -566,15 +591,41 @@ function EditPrompt({ prompt, onSave, onCancel }) {
   }
 
   return (
-    <div className="space-y-2">
-      <input
-        ref={inputRef}
-        type="text"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={handleKeyDown}
-        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-      />
+    <div className="space-y-3">
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Prompt:</label>
+        <input
+          ref={inputRef}
+          type="text"
+          value={formData.prompt}
+          onChange={(e) => setFormData(prev => ({ ...prev, prompt: e.target.value }))}
+          onKeyDown={handleKeyDown}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+        />
+      </div>
+      
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Title:</label>
+        <input
+          type="text"
+          value={formData.result_title}
+          onChange={(e) => setFormData(prev => ({ ...prev, result_title: e.target.value }))}
+          onKeyDown={handleKeyDown}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+        />
+      </div>
+      
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Summary:</label>
+        <textarea
+          value={formData.result_summary}
+          onChange={(e) => setFormData(prev => ({ ...prev, result_summary: e.target.value }))}
+          onKeyDown={handleKeyDown}
+          rows={2}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm resize-none"
+        />
+      </div>
+      
       <div className="flex space-x-2">
         <button
           onClick={handleSave}
@@ -596,7 +647,7 @@ function EditPrompt({ prompt, onSave, onCancel }) {
 // Chat View Component
 function ChatView({ item, onBack, onDelete, onEdit }) {
   const [messages, setMessages] = useState([
-    { id: 1, type: 'user', content: item.prompt, timestamp: item.date },
+            { id: 1, type: 'user', content: item.prompt, timestamp: item.created_at },
     { id: 2, type: 'assistant', content: item.result_summary || 'AI-generated image from prompt', timestamp: new Date() }
   ])
   const [newMessage, setNewMessage] = useState('')
@@ -704,13 +755,13 @@ function ChatView({ item, onBack, onDelete, onEdit }) {
                 <p className="text-xs sm:text-sm text-gray-500">
                   {(() => {
                     let itemDate
-                    if (typeof item.date === 'string') {
-                      itemDate = new Date(item.date)
-                    } else if (item.date instanceof Date) {
-                      itemDate = item.date
-                    } else {
-                      itemDate = new Date()
-                    }
+                          if (typeof item.created_at === 'string') {
+        itemDate = new Date(item.created_at)
+      } else if (item.created_at instanceof Date) {
+        itemDate = item.created_at
+      } else {
+        itemDate = new Date()
+      }
                     
                     if (isNaN(itemDate.getTime())) {
                       return 'Invalid Date'
