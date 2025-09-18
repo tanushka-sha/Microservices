@@ -90,10 +90,13 @@ export default function ImageGenPage({ onSubmit, userName, onLogout, onNavigateT
       const response = await imageAPI.generateImage(text, token)
       console.log('Image generation response:', response)
       
-      if (response.image_url) {
+      // Use base64 image data if available, otherwise fall back to URL
+      if (response.image_data) {
+        setGeneratedImage(response.image_data)
+      } else if (response.image_url) {
         setGeneratedImage(response.image_url)
       } else {
-        throw new Error('No image URL received from server')
+        throw new Error('No image data received from server')
       }
 
       // Call the original onSubmit if provided
@@ -195,12 +198,12 @@ export default function ImageGenPage({ onSubmit, userName, onLogout, onNavigateT
                 <h3 className={`text-xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>Generated Image</h3>
                 <div className="rounded-lg overflow-hidden shadow-lg">
                   <img 
-                    src={generatedImage} 
+                    src={generatedImage.startsWith('data:') ? generatedImage : `data:image/png;base64,${generatedImage}`}
                     alt="AI Generated Image" 
                     className="w-full h-auto max-h-96 object-contain"
                     onError={(e) => {
-                      console.error('Failed to load image:', generatedImage)
-                      setError('Failed to load generated image')
+                      console.error('Failed to load image')
+                      setError('Failed to load generated image. The image data may be corrupted.')
                     }}
                   />
                 </div>

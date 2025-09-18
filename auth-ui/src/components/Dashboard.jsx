@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { tokenManager, dashboardAPI, imageAPI } from '../services/api'
+import { tokenManager, dashboardAPI, imageAPI, searchAPI } from '../services/api'
 
 // Icons
 const SearchIcon = () => (
@@ -138,7 +138,6 @@ export default function Dashboard({ userName, onLogout, onBackToWelcome }) {
       if (searchQuery) filters.keyword = searchQuery
 
       const response = await dashboardAPI.getHistory(token, filters)
-      console.log('Dashboard API response:', response)
       setHistory(Array.isArray(response) ? response : [])
     } catch (error) {
       console.error('Failed to load history from API:', error)
@@ -213,15 +212,7 @@ export default function Dashboard({ userName, onLogout, onBackToWelcome }) {
     return groups
   }
 
-  const filteredHistory = history.filter(item => {
-    const matchesSearch = item.prompt.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesType = !selectedType || item.type === selectedType.toLowerCase()
-    const matchesDate = !selectedDate || new Date(item.created_at).toDateString() === new Date(selectedDate).toDateString()
-    
-    return matchesSearch && matchesType && matchesDate
-  })
-
-  const groupedHistory = groupHistoryByDate(filteredHistory)
+  const groupedHistory = groupHistoryByDate(history)
 
   const handleItemClick = (item) => {
     setSelectedItem(item)
@@ -294,7 +285,8 @@ export default function Dashboard({ userName, onLogout, onBackToWelcome }) {
     }
   }
 
-  const handleEditCancel = () => {
+  const handleEditCancel = (e) => {
+    if (e) e.stopPropagation()
     setEditingItem(null)
   }
 
@@ -464,8 +456,8 @@ export default function Dashboard({ userName, onLogout, onBackToWelcome }) {
           </div>
         </div>
 
-        {/* History Section */}
-        <div className="space-y-4 sm:space-y-6">
+                 {/* History Section */}
+         <div className="space-y-4 sm:space-y-6 max-h-[calc(100vh-300px)] overflow-y-auto">
           {loading ? (
             <div className="text-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
@@ -576,54 +568,68 @@ function EditItemForm({ item, onSave, onCancel }) {
     inputRef.current?.focus()
   }, [])
 
-  const handleSave = () => {
+  const handleSave = (e) => {
+    e.stopPropagation()
     if (formData.prompt.trim()) {
       onSave(formData)
     }
   }
 
   const handleKeyDown = (e) => {
+    e.stopPropagation()
     if (e.key === 'Enter' && e.ctrlKey) {
-      handleSave()
+      handleSave(e)
     } else if (e.key === 'Escape') {
-      onCancel()
+      onCancel(e)
     }
   }
 
-  return (
-    <div className="space-y-3">
+     return (
+     <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">Prompt:</label>
-        <input
-          ref={inputRef}
-          type="text"
-          value={formData.prompt}
-          onChange={(e) => setFormData(prev => ({ ...prev, prompt: e.target.value }))}
-          onKeyDown={handleKeyDown}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-        />
+                 <input
+           ref={inputRef}
+           type="text"
+           value={formData.prompt}
+           onChange={(e) => {
+             e.stopPropagation()
+             setFormData(prev => ({ ...prev, prompt: e.target.value }))
+           }}
+           onKeyDown={handleKeyDown}
+           onClick={(e) => e.stopPropagation()}
+           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+         />
       </div>
       
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">Title:</label>
-        <input
-          type="text"
-          value={formData.result_title}
-          onChange={(e) => setFormData(prev => ({ ...prev, result_title: e.target.value }))}
-          onKeyDown={handleKeyDown}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-        />
+                 <input
+           type="text"
+           value={formData.result_title}
+           onChange={(e) => {
+             e.stopPropagation()
+             setFormData(prev => ({ ...prev, result_title: e.target.value }))
+           }}
+           onKeyDown={handleKeyDown}
+           onClick={(e) => e.stopPropagation()}
+           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+         />
       </div>
       
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">Summary:</label>
-        <textarea
-          value={formData.result_summary}
-          onChange={(e) => setFormData(prev => ({ ...prev, result_summary: e.target.value }))}
-          onKeyDown={handleKeyDown}
-          rows={2}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm resize-none"
-        />
+                 <textarea
+           value={formData.result_summary}
+           onChange={(e) => {
+             e.stopPropagation()
+             setFormData(prev => ({ ...prev, result_summary: e.target.value }))
+           }}
+           onKeyDown={handleKeyDown}
+           onClick={(e) => e.stopPropagation()}
+           rows={2}
+           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm resize-none"
+         />
       </div>
       
       <div className="flex space-x-2">
@@ -646,14 +652,23 @@ function EditItemForm({ item, onSave, onCancel }) {
 
 // Chat View Component
 function ChatView({ item, onBack, onDelete, onEdit }) {
-  const [messages, setMessages] = useState([
-            { id: 1, type: 'user', content: item.prompt, timestamp: item.created_at },
-    { id: 2, type: 'assistant', content: item.result_summary || 'AI-generated image from prompt', timestamp: new Date() }
-  ])
-  const [newMessage, setNewMessage] = useState('')
-  const [isGenerating, setIsGenerating] = useState(false)
+     const [messages, setMessages] = useState([
+             { id: 1, type: 'user', content: item.prompt, timestamp: item.created_at },
+     { id: 2, type: 'assistant', content: item.result_summary || 'AI-generated image from prompt', timestamp: new Date() }
+   ])
+   const [newMessage, setNewMessage] = useState('')
+   const [isGenerating, setIsGenerating] = useState(false)
+      const messagesEndRef = useRef(null)
 
-  const handleSendMessage = async () => {
+   const scrollToBottom = () => {
+     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+   }
+
+   useEffect(() => {
+     scrollToBottom()
+   }, [messages])
+
+   const handleSendMessage = async () => {
     if (newMessage.trim()) {
       const userMessage = {
         id: Date.now(),
@@ -669,14 +684,41 @@ function ChatView({ item, onBack, onDelete, onEdit }) {
       try {
         const token = tokenManager.getToken()
         if (token) {
-          const response = await imageAPI.generateImage(newMessage.trim(), token)
-          
-          const assistantMessage = {
-            id: Date.now() + 1,
-            type: 'assistant',
-            content: response.image_url || response.url || 'Image generated successfully',
-            timestamp: new Date(),
-            isImage: true
+          let response
+          let assistantMessage
+
+          if (item.type === 'search') {
+            // Call Tavily search API for search conversations
+            response = await searchAPI.search(newMessage.trim(), token)
+            
+            // Format search results
+            let searchContent = 'Search completed successfully.'
+            if (response.results && response.results.length > 0) {
+              searchContent = `Found ${response.results.length} results:\n\n`
+              response.results.forEach((result, index) => {
+                searchContent += `${index + 1}. **${result.title}**\n`
+                searchContent += `${result.summary}\n`
+                searchContent += `[${result.url}](${result.url})\n\n`
+              })
+            }
+            
+            assistantMessage = {
+              id: Date.now() + 1,
+              type: 'assistant',
+              content: searchContent,
+              timestamp: new Date()
+            }
+          } else {
+            // Call image generation API for image conversations
+            response = await imageAPI.generateImage(newMessage.trim(), token)
+            
+            assistantMessage = {
+              id: Date.now() + 1,
+              type: 'assistant',
+              content: response.image_url || response.url || 'Image generated successfully',
+              timestamp: new Date(),
+              isImage: true
+            }
           }
           
           setMessages(prev => [...prev, assistantMessage])
@@ -685,17 +727,17 @@ function ChatView({ item, onBack, onDelete, onEdit }) {
           const assistantMessage = {
             id: Date.now() + 1,
             type: 'assistant',
-            content: 'AI-generated image from prompt',
+            content: item.type === 'search' ? 'Search completed successfully.' : 'AI-generated image from prompt',
             timestamp: new Date()
           }
           setMessages(prev => [...prev, assistantMessage])
         }
       } catch (error) {
-        console.error('Failed to generate image:', error)
+        console.error(`Failed to ${item.type === 'search' ? 'search' : 'generate image'}:`, error)
         const errorMessage = {
           id: Date.now() + 1,
           type: 'assistant',
-          content: 'Sorry, I encountered an error generating the image. Please try again.',
+          content: `Sorry, I encountered an error ${item.type === 'search' ? 'performing the search' : 'generating the image'}. Please try again.`,
           timestamp: new Date()
         }
         setMessages(prev => [...prev, errorMessage])
@@ -790,9 +832,9 @@ function ChatView({ item, onBack, onDelete, onEdit }) {
         </div>
       </div>
 
-      {/* Chat Messages */}
-      <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-        <div className="space-y-4 sm:space-y-6">
+             {/* Chat Messages */}
+       <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 h-[calc(100vh-200px)] overflow-y-auto">
+         <div className="space-y-4 sm:space-y-6">
           {messages.map((message) => (
             <div
               key={message.id}
@@ -815,17 +857,18 @@ function ChatView({ item, onBack, onDelete, onEdit }) {
             </div>
           ))}
           
-          {isGenerating && (
-            <div className="flex justify-start">
-              <div className="max-w-[85%] sm:max-w-3xl px-3 sm:px-4 py-2 sm:py-3 rounded-lg bg-white border border-gray-200 text-gray-900">
-                <div className="flex items-center space-x-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                  <p className="text-sm">Generating image...</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+                     {isGenerating && (
+             <div className="flex justify-start">
+               <div className="max-w-[85%] sm:max-w-3xl px-3 sm:px-4 py-2 sm:py-3 rounded-lg bg-white border border-gray-200 text-gray-900">
+                 <div className="flex items-center space-x-2">
+                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                   <p className="text-sm">{item.type === 'search' ? 'Searching...' : 'Generating image...'}</p>
+                 </div>
+               </div>
+             </div>
+           )}
+           <div ref={messagesEndRef} />
+         </div>
 
         {/* Message Input */}
         <div className="mt-6 sm:mt-8">
@@ -845,7 +888,7 @@ function ChatView({ item, onBack, onDelete, onEdit }) {
               disabled={!newMessage.trim() || isGenerating}
               className="px-4 sm:px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm sm:text-base font-medium"
             >
-              {isGenerating ? 'Generating...' : 'Send'}
+              {isGenerating ? (item.type === 'search' ? 'Searching...' : 'Generating...') : 'Send'}
             </button>
           </div>
         </div>

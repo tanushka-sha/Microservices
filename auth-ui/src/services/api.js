@@ -217,9 +217,10 @@ export const dashboardAPI = {
   // Get user history
   getHistory: async (token, filters = {}) => {
     const queryParams = new URLSearchParams()
-    if (filters.date) queryParams.append('date', filters.date)
-    if (filters.type) queryParams.append('type', filters.type)
-    if (filters.search) queryParams.append('search', filters.search)
+    if (filters.date_from) queryParams.append('date_from', filters.date_from)
+    if (filters.date_to) queryParams.append('date_to', filters.date_to)
+    if (filters.type_filter) queryParams.append('type_filter', filters.type_filter)
+    if (filters.keyword) queryParams.append('keyword', filters.keyword)
     
     const url = `/dashboard/history${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
     
