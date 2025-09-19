@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package search;
+
+service Search {
+  rpc Search (QueryRequest) returns (SearchResponse);
+}
+
+message QueryRequest {
+  string query = 1;
+  string search_depth = 2; // "basic" or "advanced"
+  int32 max_results = 3;   // default 10
+}
+
+message SearchResultItem {
+  string title = 1;
+  string url = 2;
+  string summary = 3;
+  string content = 4;
+}
+
+message SearchResponse {
+  bool success = 1;
+  string query = 2;
+  repeated SearchResultItem results = 3;
+  string summary = 4;
+  string timestamp = 5;
+  string source = 6;
+}
+
+
