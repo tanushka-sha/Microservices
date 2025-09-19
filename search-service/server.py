@@ -1,117 +1,118 @@
+import os
 import asyncio
-import json
+import logging
 from datetime import datetime
-from pathlib import Path
+from typing import Dict, Any
+
+from dotenv import load_dotenv
+load_dotenv()
+
 
 import grpc
-from concurrent import futures
+import aiohttp
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+import uvicorn
+import threading
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+import search_pb2
+import search_pb2_grpc
 
-from grpc_tools import protoc  # type: ignore
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+# Load API key from environment
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+if not TAVILY_API_KEY:
+    raise RuntimeError("❌ Missing TAVILY_API_KEY in environment")
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=Path(__file__).parent / ".env", case_sensitive=False, extra="ignore")
-    tavily_api_key: str = Field(default="", alias="TAVILY_API_KEY")
-    grpc_bind: str = Field(default="0.0.0.0:50061", alias="GRPC_BIND")
-
-
-def _ensure_protos_generated() -> None:
-    proto_dir = Path(__file__).parent / "proto"
-    proto_file = proto_dir / "search.proto"
-    out_dir = Path(__file__).parent
-    if not (out_dir / "search_pb2.py").exists() or not (out_dir / "search_pb2_grpc.py").exists():
-        protoc.main(
-            [
-                "",
-                f"-I{proto_dir}",
-                f"--python_out={out_dir}",
-                f"--grpc_python_out={out_dir}",
-                str(proto_file),
-            ]
-        )
-
-
-_ensure_protos_generated()
-import search_pb2  # type: ignore
-import search_pb2_grpc  # type: ignore
-
+TAVILY_API_URL = "https://api.tavily.com/search"
 
 class SearchService(search_pb2_grpc.SearchServicer):
-    def __init__(self, settings: Settings):
-        self.settings = settings
+    async def _tavily_search(self, query: str) -> Dict[str, Any]:
+        """Call Tavily real API (same as monolithic)."""
+        headers = {"Authorization": f"Bearer {TAVILY_API_KEY}"}
+        payload = {"query": query}
 
-    async def _tavily_search(self, query: str, search_depth: str = "basic", max_results: int = 10):
-        import aiohttp
-        url = "https://api.tavily.com/search"
-        headers = {"Authorization": f"Bearer {self.settings.tavily_api_key}", "Content-Type": "application/json"}
-        payload = {
-            "query": query,
-            "search_depth": search_depth,
-            "include_answer": True,
-            "include_raw_content": False,
-            "max_results": max_results,
-        }
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
+            async with session.post(TAVILY_API_URL, json=payload, headers=headers) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    logger.error(f"Tavily API failed ({resp.status}): {text}")
+                    raise RuntimeError(f"Tavily API failed ({resp.status})")
+
                 data = await resp.json()
-                results = []
-                for r in data.get("results", []):
-                    results.append(
-                        {
-                            "title": r.get("title", ""),
-                            "url": r.get("url", ""),
-                            "summary": r.get("content", ""),
-                            "content": r.get("content", ""),
-                        }
-                    )
+                logger.info(f"✅ Tavily response: {data}")
+
                 return {
                     "success": True,
                     "query": query,
-                    "results": results,
-                    "summary": data.get("answer", f"Search results for: {query}"),
+                    "results": data.get("results", []),
+                    "summary": data.get("summary") or f"Search results for: {query}",
                     "timestamp": datetime.utcnow().isoformat(),
-                    "source": "tavily_direct_api",
+                    "source": "tavily_mcp_api"
                 }
 
-    async def Search(self, request, context):  # type: ignore
+    async def Search(self, request, context):
         try:
-            raw = await self._tavily_search(request.query or "", request.search_depth or "basic", request.max_results or 10)
-            resp = search_pb2.SearchResponse(
-                success=bool(raw.get("success")),
-                query=raw.get("query", ""),
+            query = request.query
+            result = await self._tavily_search(query)
+
+            return search_pb2.SearchResponse(
+                success=result["success"],
+                query=result["query"],
+                summary=result["summary"],
+                timestamp=result["timestamp"],
+                source=result["source"],
                 results=[
-                    search_pb2.SearchResultItem(
-                        title=i.get("title", ""), url=i.get("url", ""), summary=i.get("summary", ""), content=i.get("content", "")
+                    search_pb2.SearchResult(
+                        title=r.get("title", ""),
+                        url=r.get("url", ""),
+                        summary=r.get("summary", ""),
+                        content=r.get("content", "")
                     )
-                    for i in raw.get("results", [])
-                ],
-                summary=raw.get("summary", ""),
-                timestamp=raw.get("timestamp", ""),
-                source=raw.get("source", ""),
+                    for r in result["results"]
+                ]
             )
-            return resp
         except Exception as e:
-            await context.abort(grpc.StatusCode.INTERNAL, f"Search failed: {e}")
+            logger.error(f"Search failed: {e}")
+            return search_pb2.SearchResponse(
+                success=False,
+                query=request.query,
+                summary=f"Error: {str(e)}",
+                timestamp=datetime.utcnow().isoformat(),
+                source="search-service"
+            )
 
 
-async def serve_async(settings: Settings):
+# -------------------- FASTAPI (HTTP) --------------------
+app = FastAPI()
+
+@app.post("/search")
+async def http_search(payload: Dict[str, str]):
+    query = payload.get("query")
+    svc = SearchService()
+    result = await svc._tavily_search(query)
+    return JSONResponse(result)
+
+
+# -------------------- GRPC SERVER --------------------
+async def serve_grpc() -> None:
     server = grpc.aio.server()
-    search_pb2_grpc.add_SearchServicer_to_server(SearchService(settings), server)
-    server.add_insecure_port(settings.grpc_bind)
+    search_pb2_grpc.add_SearchServicer_to_server(SearchService(), server)
+    listen_addr = "[::]:50063"
+    logger.info(f"🚀 gRPC Search-service running at {listen_addr}")
+    server.add_insecure_port(listen_addr)
     await server.start()
-    print(f"[search-service] gRPC server listening on {settings.grpc_bind}")
     await server.wait_for_termination()
 
 
-def main():
-    settings = Settings()
-    asyncio.run(serve_async(settings))
-
-
 if __name__ == "__main__":
-    main()
+    # Run gRPC in background thread
+    def start_grpc():
+        asyncio.run(serve_grpc())
 
+    threading.Thread(target=start_grpc, daemon=True).start()
 
+    # Run HTTP server
+    uvicorn.run(app, host="0.0.0.0", port=8001)

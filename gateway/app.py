@@ -30,7 +30,7 @@ import search_pb2  # type: ignore
 import search_pb2_grpc  # type: ignore
 
 
-SEARCH_GRPC_ADDR = os.getenv("SEARCH_GRPC_ADDR", "localhost:50061")
+SEARCH_GRPC_ADDR = os.getenv("SEARCH_GRPC_ADDR", "localhost:50063")
 
 app = FastAPI(title="API Gateway")
 app.add_middleware(

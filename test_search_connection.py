@@ -18,8 +18,8 @@ sys.path.append(out_dir)
 import search_pb2, search_pb2_grpc
 
 def test_search():
-    print("🔌 Connecting to search-service at localhost:50061...")
-    with grpc.insecure_channel("localhost:50061") as channel:
+    # print("🔌 Connecting to search-service at localhost:50062...")
+    with grpc.insecure_channel("localhost:50063") as channel:
         stub = search_pb2_grpc.SearchStub(channel)
 
         # Example RPC call — adjust to whatever is defined in search.proto
